@@ -3,6 +3,8 @@ let peer = null;
 let conn = null;
 let isHost = false;
 let roomCode = '';
+let localReady = false;
+let remoteReady = false;
 
 function generateCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -37,11 +39,10 @@ function hostGame() {
     document.getElementById('btn-host').disabled = true;
     document.getElementById('connection-status').textContent = 'Creating room...';
 
-    peer = new Peer('mikegame-' + roomCode, {
-        debug: 0
-    });
+    peer = new Peer('mikegame-' + roomCode);
 
     peer.on('open', (id) => {
+        console.log('Host peer open with ID:', id);
         document.getElementById('room-code').textContent = roomCode;
         document.getElementById('room-code-display').classList.remove('hidden');
         document.getElementById('connection-status').textContent = 'Room created! Waiting for opponent...';
@@ -49,12 +50,22 @@ function hostGame() {
     });
 
     peer.on('connection', (connection) => {
+        console.log('Host received connection');
         conn = connection;
-        setupConnection();
+        onConnected();
+        conn.on('open', () => {
+            console.log('Host conn open event');
+            onConnected();
+        });
+        conn.on('data', (data) => handlePeerData(data));
+        conn.on('close', () => {
+            if (gameRunning) endGame('Opponent Disconnected!');
+        });
     });
 
     peer.on('error', (err) => {
-        document.getElementById('connection-status').textContent = 'Error: ' + err.message;
+        console.error('Host peer error:', err);
+        document.getElementById('connection-status').textContent = 'Error: ' + err.type + ' - ' + err.message;
         document.getElementById('btn-host').disabled = false;
     });
 }
@@ -70,76 +81,86 @@ function joinGame() {
     document.getElementById('btn-join').disabled = true;
     document.getElementById('connection-status').textContent = 'Connecting...';
 
-    peer = new Peer(undefined, { debug: 0 });
+    peer = new Peer();
 
-    peer.on('open', () => {
+    peer.on('open', (id) => {
+        console.log('Joiner peer open with ID:', id);
         conn = peer.connect('mikegame-' + code, { reliable: true });
-        setupConnection();
+
+        conn.on('open', () => {
+            console.log('Joiner conn open event');
+            onConnected();
+        });
+        conn.on('data', (data) => handlePeerData(data));
+        conn.on('close', () => {
+            if (gameRunning) endGame('Opponent Disconnected!');
+        });
+        conn.on('error', (err) => {
+            console.error('Joiner conn error:', err);
+            document.getElementById('connection-status').textContent = 'Connection failed: ' + err;
+            document.getElementById('btn-join').disabled = false;
+        });
     });
 
     peer.on('error', (err) => {
-        document.getElementById('connection-status').textContent = 'Error: ' + err.message;
+        console.error('Joiner peer error:', err);
+        document.getElementById('connection-status').textContent = 'Error: ' + err.type + ' - ' + err.message;
         document.getElementById('btn-join').disabled = false;
     });
 }
 
-// ============ CONNECTION HANDLING ============
-function setupConnection() {
-    conn.on('open', () => {
-        document.getElementById('step-connect').classList.remove('active');
-        document.getElementById('step-waiting').classList.add('active');
-        document.getElementById('waiting-status').textContent = 'Connected! Setting up game...';
+// ============ ON CONNECTED ============
+let connected = false;
 
-        // Send character choice
-        conn.send({ type: 'charSelect', char: myChar });
-    });
+function onConnected() {
+    if (connected) return; // Only run once
+    // Check if connection is actually open
+    if (!conn || !conn.open) {
+        console.log('onConnected called but conn not open yet, waiting...');
+        return;
+    }
+    connected = true;
+    console.log('Connection established! Sending charSelect:', myChar);
 
-    conn.on('data', (data) => {
-        handlePeerData(data);
-    });
+    // Move to waiting screen
+    document.getElementById('step-connect').classList.remove('active');
+    document.getElementById('step-waiting').classList.add('active');
+    document.getElementById('waiting-status').textContent = 'Connected! Setting up game...';
 
-    conn.on('close', () => {
-        if (gameRunning) {
-            endGame('Opponent Disconnected!');
-        }
-    });
+    // Send character choice
+    conn.send({ type: 'charSelect', char: myChar });
 }
 
+// ============ HANDLE PEER DATA ============
 function handlePeerData(data) {
     if (!data || !data.type) return;
+    console.log('Received:', data.type);
 
     switch (data.type) {
         case 'charSelect':
-            // Opponent selected their character
             const opponentChar = data.char;
             if (opponentChar === myChar) {
-                // Both picked same - swap the joiner
+                // Both picked same character - host keeps their pick, joiner swaps
                 if (!isHost) {
                     myChar = myChar === 'boy' ? 'girl' : 'boy';
-                    conn.send({ type: 'charSelect', char: myChar });
+                    document.getElementById('waiting-status').textContent =
+                        'Opponent picked same character! You are now ' +
+                        (myChar === 'boy' ? 'LASER BOY' : 'MIC GIRL');
                 }
             }
-            // Update HUD labels
-            updatePlayerLabels();
-            // Small delay then start
-            setTimeout(() => {
-                conn.send({ type: 'ready' });
-                checkReady();
-            }, 500);
+            // Mark remote as ready and send our ready signal
+            remoteReady = true;
+            conn.send({ type: 'ready' });
+            tryStartGame();
             break;
 
         case 'ready':
-            checkReady();
+            remoteReady = true;
+            tryStartGame();
             break;
 
         case 'state':
-            // Receive opponent state
             applyRemoteState(data);
-            break;
-
-        case 'projectile':
-            // Opponent fired
-            projectiles.push(data.proj);
             break;
 
         case 'restart':
@@ -148,25 +169,18 @@ function handlePeerData(data) {
     }
 }
 
-let localReady = false;
-let remoteReady = false;
-
-function checkReady() {
+function tryStartGame() {
+    // We need: connection open + we sent charSelect (localReady) + received charSelect (remoteReady)
     if (!localReady) {
         localReady = true;
         conn.send({ type: 'ready' });
-    } else {
-        remoteReady = true;
     }
 
     if (localReady && remoteReady) {
+        console.log('Both ready! Starting game. I am:', myChar);
+        document.getElementById('waiting-status').textContent = 'Starting!';
         updatePlayerLabels();
-        startGameLoop();
-    } else if (localReady) {
-        // Received ready from peer, mark remote as ready too
-        remoteReady = true;
-        updatePlayerLabels();
-        startGameLoop();
+        setTimeout(() => startGameLoop(), 300);
     }
 }
 
@@ -187,7 +201,7 @@ function sendState() {
     if (!conn || !conn.open || !myChar) return;
 
     sendCounter++;
-    if (sendCounter % 2 !== 0) return; // Send every other frame
+    if (sendCounter % 2 !== 0) return;
 
     const me = players[myChar];
     conn.send({
@@ -223,7 +237,6 @@ function applyRemoteState(data) {
     opp.onGround = data.onGround;
     opp.hitFlash = data.hitFlash;
 
-    // Sync opponent projectiles
     const myProjectiles = projectiles.filter(p => p.owner === myChar);
     const remoteProjectiles = data.projectiles || [];
     projectiles = [...myProjectiles, ...remoteProjectiles];
