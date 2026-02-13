@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mike Game - Karaoke Battle!</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <!-- SELECTION SCREEN -->
+    <div id="selection-screen">
+        <h1>KARAOKE BATTLE!</h1>
+        <p class="subtitle">A Two-Player Remote Game</p>
+
+        <div id="step-choose" class="step active">
+            <h2>Choose Your Fighter</h2>
+            <div class="character-select">
+                <div class="char-card" id="select-boy" onclick="selectCharacter('boy')">
+                    <canvas id="preview-boy" width="160" height="200"></canvas>
+                    <h3>LASER BOY</h3>
+                    <p>Fires lasers from his eyes!</p>
+                    <p class="controls-hint">WASD + SPACE to fire</p>
+                </div>
+                <div class="char-card" id="select-girl" onclick="selectCharacter('girl')">
+                    <canvas id="preview-girl" width="160" height="200"></canvas>
+                    <h3>MIC GIRL</h3>
+                    <p>Blasts sonic waves from her mic!</p>
+                    <p class="controls-hint">WASD + SPACE to blast</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="step-connect" class="step">
+            <h2>Connect to Opponent</h2>
+            <p id="selected-char-label"></p>
+            <div class="connect-box">
+                <div class="connect-option">
+                    <h3>HOST A GAME</h3>
+                    <button id="btn-host" onclick="hostGame()">Create Room</button>
+                    <div id="room-code-display" class="hidden">
+                        <p>Share this code with your friend:</p>
+                        <span id="room-code" class="code-display"></span>
+                        <button onclick="copyCode()">Copy</button>
+                    </div>
+                </div>
+                <div class="divider">OR</div>
+                <div class="connect-option">
+                    <h3>JOIN A GAME</h3>
+                    <input type="text" id="join-code" placeholder="Enter room code">
+                    <button id="btn-join" onclick="joinGame()">Join</button>
+                </div>
+            </div>
+            <p id="connection-status"></p>
+            <button class="back-btn" onclick="goBack()">Back</button>
+        </div>
+
+        <div id="step-waiting" class="step">
+            <h2>Waiting for opponent...</h2>
+            <div class="loader"></div>
+            <p id="waiting-status"></p>
+        </div>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen" class="hidden">
+        <div id="hud">
+            <div class="health-container left">
+                <span id="p1-name">BOY</span>
+                <div class="health-bar">
+                    <div id="p1-health" class="health-fill boy-health"></div>
+                </div>
+                <span id="p1-hp">100</span>
+            </div>
+            <div id="round-info">FIGHT!</div>
+            <div class="health-container right">
+                <span id="p2-name">GIRL</span>
+                <div class="health-bar">
+                    <div id="p2-health" class="health-fill girl-health"></div>
+                </div>
+                <span id="p2-hp">100</span>
+            </div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="game-over" class="hidden">
+            <h1 id="winner-text"></h1>
+            <button onclick="restartGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+    <script src="multiplayer.js"></script>
+</body>
+</html>
