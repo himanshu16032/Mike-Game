@@ -244,17 +244,27 @@ function sendState() {
     if (sendCounter % 3 !== 0) return;
 
     const me = players[myChar];
+    const myPlat = myChar === 'boy' ? platformBoy : platformGirl;
     publish('state', {
         char: myChar,
         x: me.x,
         y: me.y,
         vy: me.vy,
         hp: me.hp,
+        platX: myPlat.x,
+        platY: myPlat.y,
+        platVx: myPlat.vx,
+        platVy: myPlat.vy,
         facing: me.facing,
         attacking: me.attacking,
         walkCycle: me.walkCycle,
         onGround: me.onGround,
         hitFlash: me.hitFlash,
+        superPower: me.superPower,
+        superReady: me.superReady,
+        usingSuperAnim: me.usingSuperAnim,
+        dodging: me.dodging,
+        invincible: me.invincible,
         projectiles: projectiles.filter(p => p.owner === myChar).map(p => ({
             x: p.x, y: p.y, vx: p.vx, vy: p.vy,
             owner: p.owner, type: p.type, life: p.life, damage: p.damage
@@ -270,11 +280,24 @@ function applyRemoteState(data) {
     opp.x = data.x;
     opp.y = data.y;
     opp.vy = data.vy;
+    // Sync opponent platform position
+    const oppPlat = opponentChar === 'boy' ? platformBoy : platformGirl;
+    if (data.platX !== undefined) {
+        oppPlat.x = data.platX;
+        oppPlat.y = data.platY;
+        oppPlat.vx = data.platVx || 0;
+        oppPlat.vy = data.platVy || 0;
+    }
     opp.facing = data.facing;
     opp.attacking = data.attacking;
     opp.walkCycle = data.walkCycle;
     opp.onGround = data.onGround;
     opp.hitFlash = data.hitFlash;
+    opp.superPower = data.superPower;
+    opp.superReady = data.superReady;
+    opp.usingSuperAnim = data.usingSuperAnim;
+    opp.dodging = data.dodging;
+    opp.invincible = data.invincible;
 
     const myProjectiles = projectiles.filter(p => p.owner === myChar);
     const remoteProjectiles = data.projectiles || [];
@@ -283,6 +306,9 @@ function applyRemoteState(data) {
 
 // ============ RESTART ============
 function restartGame() {
+    // Clean up moon scene button if present
+    const moonBtn = document.getElementById('moon-replay-btn');
+    if (moonBtn) moonBtn.remove();
     resetPlayers();
     publish('restart', {});
 }

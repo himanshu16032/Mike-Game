@@ -20,13 +20,16 @@
                     <canvas id="preview-boy" width="160" height="200"></canvas>
                     <h3>LASER BOY</h3>
                     <p>Fires lasers from his eyes!</p>
-                    <p class="controls-hint">WASD + SPACE to fire</p>
+                    <p class="super-hint">SUPER: Kiss Attack</p>
+                    <p class="controls-hint">WASD + SPACE + SHIFT + Q</p>
                 </div>
                 <div class="char-card" id="select-girl" onclick="selectCharacter('girl')">
                     <canvas id="preview-girl" width="160" height="200"></canvas>
+                    <img src="images/girl_sassy_mix_cute_image.jpeg" class="card-photo" alt="Sassy Girl">
                     <h3>MIC GIRL</h3>
-                    <p>Blasts sonic waves from her mic!</p>
-                    <p class="controls-hint">WASD + SPACE to blast</p>
+                    <p>Blasts sonic waves & irritates!</p>
+                    <p class="super-hint">SUPER: Sonic Boom</p>
+                    <p class="controls-hint">WASD + SPACE + SHIFT + Q</p>
                 </div>
             </div>
         </div>
@@ -82,12 +85,53 @@
             </div>
         </div>
         <canvas id="gameCanvas"></canvas>
+
+        <!-- CONTROLS OVERLAY -->
+        <div id="controls-overlay">
+            <div class="controls-panel left-panel">
+                <h3>MOVE + PLATFORM</h3>
+                <div class="key-row">
+                    <div class="key">W</div>
+                    <div class="key e-key">E</div>
+                </div>
+                <div class="key-row">
+                    <div class="key">A</div>
+                    <div class="key">S</div>
+                    <div class="key">D</div>
+                </div>
+                <div class="key-labels">
+                    <span>JUMP / E=PLAT UP / WASD=MOVE</span>
+                </div>
+            </div>
+            <div class="controls-panel center-panel">
+                <h3>ACTIONS</h3>
+                <div class="key-row">
+                    <div class="key space-key">SPACE</div>
+                    <div class="key shift-key">SHIFT</div>
+                    <div class="key super-key">Q</div>
+                </div>
+                <div class="key-labels">
+                    <span>ATTACK</span>
+                    <span>DODGE</span>
+                    <span>SUPER</span>
+                </div>
+            </div>
+        </div>
+
         <div id="game-over" class="hidden">
             <h1 id="winner-text"></h1>
-            <button onclick="restartGame()">Play Again</button>
+        </div>
+
+        <!-- VALENTINE SCREEN -->
+        <div id="valentine-screen" class="hidden">
+            <div class="valentine-buttons">
+                <button id="yes-btn" onclick="valentineYes()">Yes!</button>
+                <button id="no-btn" class="no-btn" onclick="valentineNo()">No</button>
+            </div>
         </div>
     </div>
 
+    <script src="sounds.js"></script>
     <script src="game.js"></script>
     <script src="multiplayer.js"></script>
 </body>
