@@ -1,10 +1,12 @@
-// ============ MULTIPLAYER (PeerJS) ============
-let peer = null;
-let conn = null;
-let isHost = false;
+// ============ MULTIPLAYER (MQTT Relay) ============
+let mqttClient = null;
 let roomCode = '';
-let localReady = false;
-let remoteReady = false;
+let myId = 'p_' + Math.random().toString(36).substr(2, 9);
+let isHost = false;
+let opponentJoined = false;
+let gameStarted = false;
+
+const BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 
 function generateCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -13,6 +15,36 @@ function generateCode() {
         code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return code;
+}
+
+function connectBroker(callback) {
+    mqttClient = mqtt.connect(BROKER, {
+        clientId: myId,
+        clean: true,
+        connectTimeout: 10000,
+        keepalive: 30,
+        reconnectPeriod: 2000
+    });
+
+    mqttClient.on('connect', () => {
+        console.log('Connected to MQTT broker');
+        callback();
+    });
+
+    mqttClient.on('error', (err) => {
+        console.error('MQTT error:', err);
+        document.getElementById('connection-status').textContent = 'Broker error: ' + err.message;
+    });
+
+    mqttClient.on('message', (topic, message) => {
+        try {
+            const data = JSON.parse(message.toString());
+            if (data.sender === myId) return; // Ignore own messages
+            handleMessage(topic, data);
+        } catch (e) {
+            console.error('Parse error:', e);
+        }
+    });
 }
 
 // ============ CHARACTER SELECTION ============
@@ -26,7 +58,7 @@ function selectCharacter(char) {
 
 function goBack() {
     myChar = null;
-    if (peer) { peer.destroy(); peer = null; }
+    if (mqttClient) { mqttClient.end(); mqttClient = null; }
     document.getElementById('step-connect').classList.remove('active');
     document.getElementById('step-choose').classList.add('active');
     document.getElementById('room-code-display').classList.add('hidden');
@@ -36,37 +68,21 @@ function goBack() {
 // ============ HOST GAME ============
 function hostGame() {
     roomCode = generateCode();
+    isHost = true;
     document.getElementById('btn-host').disabled = true;
-    document.getElementById('connection-status').textContent = 'Creating room...';
+    document.getElementById('connection-status').textContent = 'Connecting to server...';
 
-    peer = new Peer('mikegame-' + roomCode);
-
-    peer.on('open', (id) => {
-        console.log('Host peer open with ID:', id);
-        document.getElementById('room-code').textContent = roomCode;
-        document.getElementById('room-code-display').classList.remove('hidden');
-        document.getElementById('connection-status').textContent = 'Room created! Waiting for opponent...';
-        isHost = true;
-    });
-
-    peer.on('connection', (connection) => {
-        console.log('Host received connection');
-        conn = connection;
-        onConnected();
-        conn.on('open', () => {
-            console.log('Host conn open event');
-            onConnected();
+    connectBroker(() => {
+        const topic = 'mikegame/' + roomCode + '/#';
+        mqttClient.subscribe(topic, { qos: 0 }, (err) => {
+            if (err) {
+                document.getElementById('connection-status').textContent = 'Subscribe failed!';
+                return;
+            }
+            document.getElementById('room-code').textContent = roomCode;
+            document.getElementById('room-code-display').classList.remove('hidden');
+            document.getElementById('connection-status').textContent = 'Room created! Waiting for opponent...';
         });
-        conn.on('data', (data) => handlePeerData(data));
-        conn.on('close', () => {
-            if (gameRunning) endGame('Opponent Disconnected!');
-        });
-    });
-
-    peer.on('error', (err) => {
-        console.error('Host peer error:', err);
-        document.getElementById('connection-status').textContent = 'Error: ' + err.type + ' - ' + err.message;
-        document.getElementById('btn-host').disabled = false;
     });
 }
 
@@ -78,85 +94,75 @@ function joinGame() {
         return;
     }
 
+    roomCode = code;
+    isHost = false;
     document.getElementById('btn-join').disabled = true;
     document.getElementById('connection-status').textContent = 'Connecting...';
 
-    peer = new Peer();
-
-    peer.on('open', (id) => {
-        console.log('Joiner peer open with ID:', id);
-        conn = peer.connect('mikegame-' + code, { reliable: true });
-
-        conn.on('open', () => {
-            console.log('Joiner conn open event');
-            onConnected();
-        });
-        conn.on('data', (data) => handlePeerData(data));
-        conn.on('close', () => {
-            if (gameRunning) endGame('Opponent Disconnected!');
-        });
-        conn.on('error', (err) => {
-            console.error('Joiner conn error:', err);
-            document.getElementById('connection-status').textContent = 'Connection failed: ' + err;
-            document.getElementById('btn-join').disabled = false;
-        });
-    });
-
-    peer.on('error', (err) => {
-        console.error('Joiner peer error:', err);
-        document.getElementById('connection-status').textContent = 'Error: ' + err.type + ' - ' + err.message;
-        document.getElementById('btn-join').disabled = false;
-    });
-}
-
-// ============ ON CONNECTED ============
-let connected = false;
-
-function onConnected() {
-    if (connected) return; // Only run once
-    // Check if connection is actually open
-    if (!conn || !conn.open) {
-        console.log('onConnected called but conn not open yet, waiting...');
-        return;
-    }
-    connected = true;
-    console.log('Connection established! Sending charSelect:', myChar);
-
-    // Move to waiting screen
-    document.getElementById('step-connect').classList.remove('active');
-    document.getElementById('step-waiting').classList.add('active');
-    document.getElementById('waiting-status').textContent = 'Connected! Setting up game...';
-
-    // Send character choice
-    conn.send({ type: 'charSelect', char: myChar });
-}
-
-// ============ HANDLE PEER DATA ============
-function handlePeerData(data) {
-    if (!data || !data.type) return;
-    console.log('Received:', data.type);
-
-    switch (data.type) {
-        case 'charSelect':
-            const opponentChar = data.char;
-            if (opponentChar === myChar) {
-                // Both picked same character - host keeps their pick, joiner swaps
-                if (!isHost) {
-                    myChar = myChar === 'boy' ? 'girl' : 'boy';
-                    document.getElementById('waiting-status').textContent =
-                        'Opponent picked same character! You are now ' +
-                        (myChar === 'boy' ? 'LASER BOY' : 'MIC GIRL');
-                }
+    connectBroker(() => {
+        const topic = 'mikegame/' + roomCode + '/#';
+        mqttClient.subscribe(topic, { qos: 0 }, (err) => {
+            if (err) {
+                document.getElementById('connection-status').textContent = 'Subscribe failed!';
+                return;
             }
-            // Mark remote as ready and send our ready signal
-            remoteReady = true;
-            conn.send({ type: 'ready' });
-            tryStartGame();
+            // Tell host we joined
+            publish('join', { char: myChar });
+            document.getElementById('step-connect').classList.remove('active');
+            document.getElementById('step-waiting').classList.add('active');
+            document.getElementById('waiting-status').textContent = 'Connected! Waiting for host to start...';
+        });
+    });
+}
+
+// ============ PUBLISH HELPER ============
+function publish(subtopic, data) {
+    if (!mqttClient || !mqttClient.connected) return;
+    data.sender = myId;
+    mqttClient.publish(
+        'mikegame/' + roomCode + '/' + subtopic,
+        JSON.stringify(data),
+        { qos: 0 }
+    );
+}
+
+// ============ MESSAGE HANDLER ============
+function handleMessage(topic, data) {
+    const parts = topic.split('/');
+    const subtopic = parts[2]; // mikegame/CODE/subtopic
+
+    switch (subtopic) {
+        case 'join':
+            if (isHost && !opponentJoined) {
+                opponentJoined = true;
+                // Handle character conflict
+                if (data.char === myChar) {
+                    // Host keeps pick, tell joiner to swap
+                    publish('swap', { swapTo: myChar === 'boy' ? 'girl' : 'boy' });
+                }
+                document.getElementById('step-connect').classList.remove('active');
+                document.getElementById('step-waiting').classList.add('active');
+                document.getElementById('waiting-status').textContent = 'Opponent joined! Starting game...';
+                // Start game after short delay
+                setTimeout(() => {
+                    publish('start', {});
+                    beginGame();
+                }, 800);
+            }
             break;
 
-        case 'ready':
-            remoteReady = true;
-            tryStartGame();
+        case 'swap':
+            if (!isHost) {
+                myChar = data.swapTo;
+                document.getElementById('waiting-status').textContent =
+                    'Same character picked! You are now ' + (myChar === 'boy' ? 'LASER BOY' : 'MIC GIRL');
+            }
+            break;
+
+        case 'start':
+            if (!isHost && !gameStarted) {
+                beginGame();
+            }
             break;
 
         case 'state':
@@ -169,19 +175,11 @@ function handlePeerData(data) {
     }
 }
 
-function tryStartGame() {
-    // We need: connection open + we sent charSelect (localReady) + received charSelect (remoteReady)
-    if (!localReady) {
-        localReady = true;
-        conn.send({ type: 'ready' });
-    }
-
-    if (localReady && remoteReady) {
-        console.log('Both ready! Starting game. I am:', myChar);
-        document.getElementById('waiting-status').textContent = 'Starting!';
-        updatePlayerLabels();
-        setTimeout(() => startGameLoop(), 300);
-    }
+function beginGame() {
+    if (gameStarted) return;
+    gameStarted = true;
+    updatePlayerLabels();
+    startGameLoop();
 }
 
 function updatePlayerLabels() {
@@ -198,14 +196,13 @@ function updatePlayerLabels() {
 let sendCounter = 0;
 
 function sendState() {
-    if (!conn || !conn.open || !myChar) return;
+    if (!mqttClient || !mqttClient.connected || !myChar) return;
 
     sendCounter++;
-    if (sendCounter % 2 !== 0) return;
+    if (sendCounter % 3 !== 0) return; // Send every 3rd frame (~20 updates/sec)
 
     const me = players[myChar];
-    conn.send({
-        type: 'state',
+    publish('state', {
         char: myChar,
         x: me.x,
         y: me.y,
@@ -240,6 +237,12 @@ function applyRemoteState(data) {
     const myProjectiles = projectiles.filter(p => p.owner === myChar);
     const remoteProjectiles = data.projectiles || [];
     projectiles = [...myProjectiles, ...remoteProjectiles];
+}
+
+// ============ RESTART ============
+function restartGame() {
+    resetPlayers();
+    publish('restart', {});
 }
 
 // ============ COPY CODE ============

@@ -746,12 +746,7 @@ function endGame(text) {
     document.getElementById('game-over').classList.remove('hidden');
 }
 
-function restartGame() {
-    resetPlayers();
-    if (conn) {
-        conn.send({ type: 'restart' });
-    }
-}
+// restartGame is defined in multiplayer.js
 
 // ============ HUD UPDATE ============
 function updateHUD() {
